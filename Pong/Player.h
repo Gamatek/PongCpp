@@ -1,10 +1,11 @@
-#ifndef PLAYER_H
-#define PLAYER_H
+#pragma once
+
 #include "PlayableEntity.h"
+#include <SDL3/SDL_timer.h>
 
 const int PADDLE_WIDTH = 4;
 const int PADDLE_HEIGHT = 40;
-const int PADDLE_SPEED = 350;
+const double PADDLE_SPEED = 300.0 / SDL_NS_PER_SECOND; // px/s
 
 class Player : public PlayableEntity {
     private:
@@ -14,7 +15,5 @@ class Player : public PlayableEntity {
         Player(int number);
         ~Player();
 
-        void move(float deltaTime, int direction);
+        void move(int elapsed_ns, int direction);
 };
-
-#endif // PLAYER_H

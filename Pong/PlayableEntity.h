@@ -1,19 +1,17 @@
-#ifndef PLAYABLE_ENTITY_H
-#define PLAYABLE_ENTITY_H
+#pragma once
+
 #include "Entity.h"
 
 class PlayableEntity : public Entity {
-private:
-    int _score{ 0 };
+    private:
+        int _score{ 0 };
 
-public:
-    PlayableEntity(int w, int h);
-    ~PlayableEntity();
+    public:
+        PlayableEntity(int w, int h);
+        ~PlayableEntity();
 
-    int getScore() const;
+        int getScore() const;
 
-    void addScore(int a);
-    void resetScore();
+        void addScore(int a);
+        void resetScore();
 };
-
-#endif // PLAYABLE_ENTITY_H

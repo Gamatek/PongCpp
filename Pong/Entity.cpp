@@ -10,29 +10,45 @@ Entity::~Entity() {};
 int Entity::getW() const { return _w; };
 int Entity::getH() const { return _h; };
 
-float Entity::getX() const { return _x; };
-void Entity::setX(float x) { _x = x; };
+double Entity::getX() const { return _x; };
+void Entity::setX(double x) { _x = x; };
 
-float Entity::getY() const { return _y; };
-void Entity::setY(float y) { _y = y; };
+double Entity::getY() const { return _y; };
+void Entity::setY(double y) { _y = y; };
 
-float Entity::getVX() const { return _vx; };
-void Entity::setVX(float vx) { _vx = vx; };
+double Entity::getVX() const { return _vx; };
+void Entity::setVX(double vx) { _vx = vx; };
 
-float Entity::getVY() const { return _vy; };
-void Entity::setVY(float vy) { _vy = vy; };
+double Entity::getVY() const { return _vy; };
+void Entity::setVY(double vy) { _vy = vy; };
 
 void Entity::reverseVX() {
-    _vx *= -1.0f;
+    _vx *= -1.0;
+};
+
+void Entity::reverseVX(bool force) {
+    if (force && _vy < 0) {
+        _vx *= -1.0;
+    } else if (!force && _vy > 0) {
+        _vx *= -1.0;
+    };
 };
 
 void Entity::reverseVY() {
-    _vy *= -1.0f;
+    _vy *= -1.0;
 };
 
-void Entity::move(float elapsed) {
-    _x += _vx * elapsed;
-    _y += _vy * elapsed;
+void Entity::reverseVY(bool force) {
+    if (force && _vy < 0) {
+        _vy *= -1.0;
+    } else if (!force && _vy > 0) {
+        _vy *= -1.0;
+    };
+};
+
+void Entity::move(int elapsed_ns) {
+    _x += _vx * elapsed_ns;
+    _y += _vy * elapsed_ns;
 };
 
 // AABB collision detection
@@ -42,5 +58,5 @@ bool Entity::check_collision(const Entity& entity) {
         entity.getX() + entity.getW() > getX() &&
         entity.getY() < getY() + getH() &&
         entity.getY() + entity.getH() > getY()
-        );
+    );
 };

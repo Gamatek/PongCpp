@@ -10,6 +10,7 @@
 #include "Network.h"
 #include "Player.h"
 #include "Ball.h"
+#include "Utils.h"
 #include "Constants.h"
 
 using namespace std;
@@ -17,15 +18,11 @@ using namespace std;
 /* We will use this renderer to draw into this window every frame. */
 static SDL_Window* window = NULL;
 static SDL_Renderer* renderer = NULL;
-Uint64 last_time = SDL_GetTicksNS();
-Uint64 next_frame_time = 0;
-int last_frame_duration = 0;
-int last_render_duration = 0;
-
-const double FIXED_DT = 1.0 / 60.0; // Game logic at 60fps
-double accumulator = 0.0;
 int target_fps = 60;
 int game_settings_item_selected = 0;
+
+double current_fps = 0.0;
+int last_frame_duration = 0;
 
 // Global game state variables
 // Entity entities[3];
@@ -37,13 +34,8 @@ NetworkManager network;
 int game_mode = MODE_MENU;
 bool show_stats = false;
 
-float clampf(float v, float min, float max) {
-    const float t = v < min ? min : v;
-    return t > max ? max : t;
-};
-
 void reset_players_positions() {
-    float y = (GAME_HEIGHT / 2.0f) - (PADDLE_HEIGHT / 2.0f);
+    double y = (GAME_HEIGHT / 2.0f) - (PADDLE_HEIGHT / 2.0f);
     player1.setY(y);
     player2.setY(y);
 };
@@ -147,17 +139,8 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* evt) {
 
 /* This function runs once per frame, and is the heart of the program. */
 SDL_AppResult SDL_AppIterate(void* appstate) {
-    Uint64 now = SDL_GetTicksNS();
-
-    if (now < next_frame_time) {
-        Uint64 remaining = next_frame_time - now;
-        if (remaining > 1000000) SDL_DelayNS(1000000);
-        return SDL_APP_CONTINUE;
-    };
-
-    double frameTime = (now - last_time) / 1000000000.0;
-    last_time = now;
-    accumulator += frameTime;
+    Uint64 frameStart = SDL_GetTicksNS();
+    int frameDuration = SDL_NS_PER_SECOND / target_fps;
 
     /*if (game_mode == MODE_NET_SEARCH) {
         static Uint32 lastRequest = 0;
@@ -169,11 +152,10 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         network.updateClient(player1, player2, ball); // �coute les r�ponses
     }*/
 
-    while (accumulator >= FIXED_DT) {
-        // Get snapshot of keyboard for real-time movement
-        const bool* keys = SDL_GetKeyboardState(nullptr);
+    // Get snapshot of keyboard for real-time movement
+    const bool* keys = SDL_GetKeyboardState(nullptr);
 
-        switch (game_mode) {
+    switch (game_mode) {
         case MODE_MENU: {
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
@@ -263,100 +245,93 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             SDL_RenderPresent(renderer);
             return SDL_APP_CONTINUE;
         }; break;
-        };
+    };
 
-        // Player 1 Movement
-        if (game_mode != MODE_NET_CLIENT) {
-            float oldY = player1.getY();
-            if (keys[SDL_SCANCODE_LSHIFT]) player1.move(FIXED_DT, -1);
-            if (keys[SDL_SCANCODE_LCTRL]) player1.move(FIXED_DT, 1);
-            if (game_mode == MODE_LOCAL && keys[SDL_SCANCODE_W]) player1.move(FIXED_DT, -1);
-            if (game_mode == MODE_LOCAL && keys[SDL_SCANCODE_S]) player1.move(FIXED_DT, 1);
-            if (game_mode == MODE_NET_HOST && !network.isGameStarted() && player1.getY() != oldY) {
-                network.setGameStarted(true);
-            };
+    // Player 1 Movement
+    if (game_mode != MODE_NET_CLIENT) {
+        double oldY = player1.getY();
+        if (keys[SDL_SCANCODE_LSHIFT]) player1.move(frameDuration, -1);
+        if (keys[SDL_SCANCODE_LCTRL]) player1.move(frameDuration, 1);
+        if (game_mode == MODE_NET_HOST && !network.isGameStarted() && player1.getY() != oldY) {
+            network.setGameStarted(true);
         };
+    };
 
-        // Player 2 Movement
-        switch (game_mode) {
-            // AI: Follow the ball
+    // Player 2 Movement
+    switch (game_mode) {
+        // AI: Follow the ball
         case MODE_AI: {
-            player2.setY(clampf(ball.getY() - (PADDLE_HEIGHT / 2.0f), 0.0f, (float)GAME_HEIGHT - PADDLE_HEIGHT));
+            player2.setY(clampd(ball.getY() - (PADDLE_HEIGHT / 2.0), 0.0, (double)GAME_HEIGHT - PADDLE_HEIGHT));
         }; break;
 
-            // Local (UP/DOWN)
+        // Local (UP/DOWN)
         case MODE_LOCAL: {
-            if (keys[SDL_SCANCODE_UP]) player2.move(FIXED_DT, -1);
-            if (keys[SDL_SCANCODE_DOWN]) player2.move(FIXED_DT, 1);
+            if (keys[SDL_SCANCODE_UP]) player2.move(frameDuration, -1);
+            if (keys[SDL_SCANCODE_DOWN]) player2.move(frameDuration, 1);
         }; break;
 
         case MODE_NET_CLIENT: {
-            float oldY = player2.getY();
-            if (keys[SDL_SCANCODE_UP]) player2.move(FIXED_DT, -1);
-            if (keys[SDL_SCANCODE_DOWN]) player2.move(FIXED_DT, 1);
+            double oldY = player2.getY();
+            if (keys[SDL_SCANCODE_UP]) player2.move(frameDuration, -1);
+            if (keys[SDL_SCANCODE_DOWN]) player2.move(frameDuration, 1);
             if (!network.isGameStarted() && player2.getY() != oldY) {
                 // We send movement, host will notice player 2 moved
             };
-        } break;
+        }; break;
 
-            // P2 controlled by client
+        // P2 controlled by client
         case MODE_NET_HOST: {
-            static float lastP2Y = -1;
+            static double lastP2Y = -1;
             if (!network.isGameStarted() && lastP2Y != -1 && player2.getY() != lastP2Y) {
                 network.setGameStarted(true);
             };
             lastP2Y = player2.getY();
         } break;
-        };
-
-        // Physics only on Host or Offline
-        if (game_mode != MODE_NET_CLIENT) {
-            if (game_mode == MODE_NET_HOST && !network.isGameStarted()) {
-                // Wait for movement
-            }
-            else {
-                // Apply ball physics
-                ball.move(FIXED_DT);
-
-                // Paddle Collision detection
-                if (ball.check_collision(player1)) {
-                    ball.setX((float)PADDLE_WIDTH);
-                    ball.reverseVX();
-                    ball.incrementBounceCount();
-                    if (ball.getBounceCount() % 3 == 0) {
-                        ball.setVX(ball.getVX() * 1.1f);
-                        ball.setVY(ball.getVY() * 1.1f);
-                    }
-                }
-
-                if (ball.check_collision(player2)) {
-                    ball.setX((float)GAME_WIDTH - PADDLE_WIDTH - BALL_SIZE);
-                    ball.reverseVX();
-                    ball.incrementBounceCount();
-                    if (ball.getBounceCount() % 3 == 0) {
-                        ball.setVX(ball.getVX() * 1.1f);
-                        ball.setVY(ball.getVY() * 1.1f);
-                    }
-                }
-
-                // Scoring detection
-                bool player1_win = ball.getX() > GAME_WIDTH;
-                bool player2_win = ball.getX() < 0;
-
-                if (player1_win || player2_win) {
-                    if (player1_win) player1.addScore(1);
-                    if (player2_win) player2.addScore(1);
-                    reset_players_positions();
-                    ball.reset();
-                    if (game_mode == MODE_NET_HOST) network.setGameStarted(false);
-                }
-            }
-        }
-
-        accumulator -= FIXED_DT;
     };
 
-    Uint64 now2 = SDL_GetTicksNS();
+    // Physics only on Host or Offline
+    // TODO: probleme ici pour la balle (point d'arrêt pas déclanché)
+    if (game_mode != MODE_NET_CLIENT) {
+        if (game_mode == MODE_NET_HOST && !network.isGameStarted()) {
+            // Wait for movement
+        } else {
+            // Apply ball physics
+            ball.move(frameDuration);
+
+            // Paddle Collision detection
+            if (ball.check_collision(player1)) {
+                ball.setX((double)PADDLE_WIDTH);
+                ball.reverseVX();
+                ball.incrementBounceCount();
+                if (ball.getBounceCount() % 3 == 0) {
+                    ball.setVX(ball.getVX() * 1.1);
+                    ball.setVY(ball.getVY() * 1.1);
+                };
+            };
+
+            if (ball.check_collision(player2)) {
+                ball.setX((double)GAME_WIDTH - PADDLE_WIDTH - BALL_SIZE);
+                ball.reverseVX();
+                ball.incrementBounceCount();
+                if (ball.getBounceCount() % 3 == 0) {
+                    ball.setVX(ball.getVX() * 1.1);
+                    ball.setVY(ball.getVY() * 1.1);
+                };
+            };
+
+            // Scoring detection
+            bool player1_win = ball.getX() > GAME_WIDTH;
+            bool player2_win = ball.getX() < 0;
+
+            if (player1_win || player2_win) {
+                if (player1_win) player1.addScore(1);
+                if (player2_win) player2.addScore(1);
+                reset_players_positions();
+                ball.reset();
+                if (game_mode == MODE_NET_HOST) network.setGameStarted(false);
+            };
+        };
+    };
 
     // Render Frame
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -399,25 +374,32 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         SDL_RenderDebugText(renderer, (float)GAME_PADDING * 2, (float)GAME_PADDING * 2, statsStr.c_str());
 
         // Right side FPS
-        string fpsStr = format("{:.2f} FPS", (float)(1.0 / frameTime));
+        string fpsStr = format("{:.2f} FPS", current_fps);
         SDL_RenderDebugText(renderer, (float)(GAME_WIDTH * 2) - 100, (float)GAME_PADDING * 2, fpsStr.c_str());
 
         // Frame duration
         string frameStr = format("{:.2f} ms", (float)last_frame_duration / 1000000.0);
         SDL_RenderDebugText(renderer, (float)(GAME_WIDTH * 2) - 100, (float)(GAME_PADDING * 2) + 10, frameStr.c_str());
 
-        // Render duration
-        string renderStr = format("{:.2f} ms", (float)last_render_duration / 1000000.0);
-        SDL_RenderDebugText(renderer, (float)(GAME_WIDTH * 2) - 100, (float)(GAME_PADDING * 2) + 20, renderStr.c_str());
-
         // Reset scale for the rest
         SDL_SetRenderScale(renderer, (float)PIXEL_SIZE, (float)PIXEL_SIZE);
     };
 
     SDL_RenderPresent(renderer);
-    next_frame_time = now + (1000000000 / target_fps);
-    last_frame_duration = SDL_GetTicksNS() - now;
-    last_render_duration = SDL_GetTicksNS() - now2;
+
+    Uint64 frameEnd = SDL_GetTicksNS();
+    Uint64 elapsed = frameEnd - frameStart;
+
+    if (elapsed < frameDuration) {
+        SDL_DelayNS((Uint64)(frameDuration - elapsed));
+    };
+
+    Uint64 finalFrameEnd = SDL_GetTicksNS();
+    Uint64 finalElapsed = finalFrameEnd - frameStart;
+    double instantFPS = (double)SDL_NS_PER_SECOND / finalElapsed;
+    current_fps = current_fps * 0.8 + instantFPS * 0.2;
+    last_frame_duration = finalElapsed;
+
     return SDL_APP_CONTINUE;
 };
 

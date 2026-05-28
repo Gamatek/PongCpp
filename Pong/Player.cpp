@@ -1,16 +1,17 @@
 #include "PlayableEntity.h"
 #include "Player.h"
+#include "Utils.h"
 #include "Constants.h"
-#include <algorithm>
 
 Player::Player(int number) : PlayableEntity(PADDLE_WIDTH, PADDLE_HEIGHT) {
     _number = number;
+    setVY(PADDLE_SPEED);
 };
 
 Player::~Player() {};
 
-void Player::move(float deltaTime, int direction) {
-    setVY(direction * PADDLE_SPEED);
-    Entity::move(deltaTime);
-    setY(std::clamp(getY(), 0.0f, (float)GAME_HEIGHT - PADDLE_HEIGHT));
+void Player::move(int elapsed_ns, int direction) {
+    Entity::reverseVY(direction == 1);
+    Entity::move(elapsed_ns);
+    setY(clampd(getY(), 0.0, (double)GAME_HEIGHT - PADDLE_HEIGHT));
 };

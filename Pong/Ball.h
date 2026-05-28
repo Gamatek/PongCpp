@@ -1,9 +1,10 @@
-#ifndef BALL_H
-#define BALL_H
+#pragma once
+
 #include "Entity.h"
-#include "Player.h"
+#include <SDL3/SDL_timer.h>
 
 const int BALL_SIZE = 4;
+const double BALL_DEFAULT_SPEED = 150.0 / SDL_NS_PER_SECOND; // px/s
 
 class Ball : public Entity {
     private:
@@ -16,8 +17,6 @@ class Ball : public Entity {
         int getBounceCount() const;
 
         void incrementBounceCount();
-        void move(float elapsed) override;
+        void move(int elapsed_ns) override;
         void reset();
 };
-
-#endif // BALL_H

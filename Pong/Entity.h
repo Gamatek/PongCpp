@@ -1,16 +1,15 @@
-#ifndef ENTITY_H
-#define ENTITY_H
+#pragma once
 
 class Entity {
     private:
         int _w{0};
         int _h{0};
 
-        float _x{0.0f};
-        float _y{0.0f};
+        double _x{0.0};
+        double _y{0.0};
 
-        float _vx{0.0f};
-        float _vy{0.0f};
+        double _vx{0.0};
+        double _vy{0.0};
 
     public:
         Entity(int w, int h);
@@ -18,22 +17,22 @@ class Entity {
 
         int getW() const;
         int getH() const;
-        float getX() const;
-        void setX(float x);
-        float getY() const;
-        void setY(float y);
+        double getX() const;
+        void setX(double x);
+        double getY() const;
+        void setY(double y);
 
-        float getVX() const;
-        void setVX(float vx);
-        float getVY() const;
-        void setVY(float vy);
+        double getVX() const;
+        void setVX(double vx);
+        double getVY() const;
+        void setVY(double vy);
 
         void reverseVX();
+        void reverseVX(bool force);
         void reverseVY();
+        void reverseVY(bool force);
 
-        virtual void move(float elapsed);
+        virtual void move(int elapsed_ns);
 
         bool check_collision(const Entity& entity);
 };
-
-#endif // ENTITY_H

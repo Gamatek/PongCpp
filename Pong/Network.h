@@ -1,5 +1,4 @@
-#ifndef NETWORK_H
-#define NETWORK_H
+#pragma once
 
 #include <string>
 #include <vector>
@@ -19,8 +18,8 @@ enum PacketType {
 struct GamePacket {
     PacketType type;
     int playerId; // 1 or 2
-    float x, y;
-    float vx, vy;
+    double x, y;
+    double vx, vy;
     int score1, score2;
 };
 
@@ -68,5 +67,3 @@ class NetworkManager {
 
         ENetSocket _discoverySocket = ENET_SOCKET_NULL;
 };
-
-#endif // NETWORK_H

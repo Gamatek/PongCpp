@@ -1,5 +1,4 @@
-#ifndef CONSTANTS_H
-#define CONSTANTS_H
+#pragma once
 
 const int DEBUG_CHAR_WIDTH = 8;
 const int DEBUG_CHAR_HEIGHT = 8;
@@ -22,5 +21,3 @@ const enum GameMode {
     MODE_NET_SEARCH = 4,
     MODE_SETTINGS = 5
 };
-
-#endif // CONSTANTS_H
