@@ -1,5 +1,7 @@
 #pragma once
 
+#include <SDL3/SDL.h>
+
 class Entity {
     private:
         int _w{0};
@@ -33,6 +35,6 @@ class Entity {
         void reverseVY(bool force);
 
         virtual void move(int elapsed_ns);
-
         bool check_collision(const Entity& entity);
+        //virtual void draw(SDL_Renderer* renderer) = 0;
 };

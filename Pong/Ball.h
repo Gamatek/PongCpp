@@ -3,8 +3,8 @@
 #include "Entity.h"
 #include <SDL3/SDL_timer.h>
 
-const int BALL_SIZE = 4;
-const double BALL_DEFAULT_SPEED = 150.0 / SDL_NS_PER_SECOND; // px/s
+const int BALL_SIZE = 8;
+const double BALL_DEFAULT_SPEED = 200.0 / SDL_NS_PER_SECOND; // px/s
 
 class Ball : public Entity {
     private:

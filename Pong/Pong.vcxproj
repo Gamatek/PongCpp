@@ -133,8 +133,7 @@
   <ItemGroup>
     <ClCompile Include="Ball.cpp" />
     <ClCompile Include="Entity.cpp" />
-    <ClCompile Include="Network.cpp" />
-    <ClCompile Include="PlayableEntity.cpp" />
+    <ClCompile Include="NetworkManager.cpp" />
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="Pong.cpp" />
     <ClCompile Include="Utils.cpp" />
@@ -143,8 +142,7 @@
     <ClInclude Include="Ball.h" />
     <ClInclude Include="Constants.h" />
     <ClInclude Include="Entity.h" />
-    <ClInclude Include="Network.h" />
-    <ClInclude Include="PlayableEntity.h" />
+    <ClInclude Include="NetworkManager.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="Utils.h" />
   </ItemGroup>

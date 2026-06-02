@@ -32,3 +32,9 @@ void Ball::reset() {
     setVY((rand() % 2 == 0 ? 1 : -1) * BALL_DEFAULT_SPEED);
     _bounce_count = 0;
 };
+
+/*void Ball::draw(SDL_Renderer* renderer) override {
+    SDL_FRect rect = { (float)x, (float)y, BALL_SIZE, BALL_SIZE };
+    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Vert
+    SDL_RenderFillRect(renderer, &rect);
+}*/
