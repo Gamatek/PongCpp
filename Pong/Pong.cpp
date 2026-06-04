@@ -8,7 +8,13 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#include <thread>
+
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+
 #include "NetworkManager.h"
+#include "ScoreManager.h"
 #include "Player.h"
 #include "Ball.h"
 #include "Utils.h"
@@ -27,11 +33,9 @@ int last_frame_duration = 0;
 
 // Global game state variables
 vector<Entity*> entities;
-Ball ball; // deplacer dans un poiniter "racourcis"
+Ball* ball;
 NetworkManager network;
-
-int score1 = 0;
-int score2 = 0;
+ScoreManager scores;
 
 int game_mode = MODE_MENU;
 bool show_stats = false;
@@ -62,12 +66,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         return SDL_APP_FAILURE;
     };
 
-    Player* p1 = new Player(1);
-    Player* p2 = new Player(2);
-    //Player* b = new Ball();
-    entities.push_back(p1);
-    entities.push_back(p2);
-    //entities.push_back(b);
+    Player* newPlayer1 = new Player(1);
+    Player* newPlayer2 = new Player(2);
+    Ball* newBall = new Ball();
+    entities.push_back(newPlayer1);
+    entities.push_back(newPlayer2);
+    entities.push_back(newBall);
+    ball = newBall;
 
     for (Entity* e : entities) {
         if (Player* player = dynamic_cast<Player*>(e)) {
@@ -75,7 +80,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
         };
     };
 
-    ball.reset();
+    newBall->reset();
 
     network.init();
 
@@ -113,10 +118,10 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* evt) {
                     network.setGameStarted(false);
                 };
                 if (evt->key.key == SDLK_5) game_mode = MODE_SETTINGS;
-                // Reset team scores
                 if (old_game_mode != game_mode) {
-                    score1 = 0;
-                    score2 = 0;
+                    scores.resetAll();
+                    reset_players_positions();
+                    ball->reset();
                 };
             }; break;
 
@@ -195,8 +200,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
                 network.sendDiscoveryRequest();
                 lastRequest = SDL_GetTicks();
             };
-            //network.updateClient(player1, player2, ball);
-            network.updateClient();
+            network.updateClient(entities, scores);
 
             const auto& rooms = network.getDiscoveredRooms();
             for (size_t i = 0; i < rooms.size() && i < 9; ++i) {
@@ -210,12 +214,11 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         }; break;
 
         case MODE_NET_HOST: {
-            //network.updateHost(player1, player2, ball);
-            network.updateHost();
+            network.updateHost(entities, scores);
         }; break;
 
         case MODE_NET_CLIENT: {
-            //network.updateClient(player1, player2, ball);
+            network.updateClient(entities, scores);
         }; break;
 
         case MODE_SETTINGS: {
@@ -261,35 +264,48 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     if (game_mode != MODE_NET_CLIENT) {
         if (game_mode == MODE_NET_HOST && !network.isGameStarted()) {
             // Wait for movement
-        }
-        else {
+        } else {
             // Apply ball physics
-            ball.move(frameDuration);
+            ball->move(frameDuration);
 
             // Paddle Collision detection
             for (Entity* e : entities) {
                 if (Player* player = dynamic_cast<Player*>(e)) {
-                    if (!ball.check_collision(*player)) continue;
-                    ball.reverseVX();
-                    ball.incrementBounceCount();
-                    if (ball.getBounceCount() % 3 == 0) {
-                        ball.setVX(ball.getVX() * 1.1);
-                        ball.setVY(ball.getVY() * 1.1);
+                    if (!ball->checkCollision(*player)) continue;
+                    if (ball->getVX() < 0) {
+                        ball->reverseVX();
+                        ball->incrementBounceCount();
+                        if (ball->getBounceCount() % 3 == 0) {
+                            ball->setVX(ball->getVX() * 1.1);
+                            ball->setVY(ball->getVY() * 1.1);
+                        };
+                        std::thread([]() { Beep(800, 80); }).detach();
                     };
                     break;
                 };
             };
 
             // Scoring detection
-            bool team1_win = ball.getX() > GAME_WIDTH;
-            bool team2_win = ball.getX() < 0;
+            bool team1_win = ball->getX() > GAME_WIDTH;
+            bool team2_win = ball->getX() < 0;
 
             if (team1_win || team2_win) {
-                if (team1_win) score1++;
-                if (team2_win) score2++;
+                scores.incrimentScore(team1_win ? 1 : 2);
                 reset_players_positions();
-                ball.reset();
+                ball->reset();
                 if (game_mode == MODE_NET_HOST) network.setGameStarted(false);
+                std::thread([team1_win, team2_win]() {
+                    if (team1_win) {
+                        Beep(523, 100); // Do
+                        Beep(659, 100); // Mi
+                        Beep(784, 200); // Sol
+                    };
+                    if (team2_win) {
+                        Beep(440, 100); // La
+                        Beep(587, 100); // Ré
+                        Beep(740, 200); // Fa#
+                    };
+                }).detach();
             };
         };
     };
@@ -307,12 +323,6 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
                 };
             };
         };
-        //double oldY = player1.getY();
-        //if (keys[SDL_SCANCODE_LSHIFT]) player1.move(frameDuration, -1);
-        //if (keys[SDL_SCANCODE_LCTRL]) player1.move(frameDuration, 1);
-        //if (game_mode == MODE_NET_HOST && !network.isGameStarted() && player1.getY() != oldY) {
-        //    network.setGameStarted(true);
-        //};
     };
 
     // Player 2 Movement
@@ -322,7 +332,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             for (Entity* e : entities) {
                 if (Player* player = dynamic_cast<Player*>(e)) {
                     if (player->getNumber() != 2) continue;
-                    player->setY(clampd(ball.getY() - (PADDLE_HEIGHT / 2.0), 0.0, GAME_HEIGHT - PADDLE_HEIGHT));
+                    player->setY(clampd(ball->getY() - (PADDLE_HEIGHT / 2.0), 0.0, GAME_HEIGHT - PADDLE_HEIGHT));
                 };
             };
         }; break;
@@ -346,12 +356,6 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
                     if (keys[SDL_SCANCODE_DOWN]) player->move(frameDuration, 1);
                 };
             };
-            /*double oldY = player2.getY();
-            if (keys[SDL_SCANCODE_UP]) player2.move(frameDuration, -1);
-            if (keys[SDL_SCANCODE_DOWN]) player2.move(frameDuration, 1);
-            if (!network.isGameStarted() && player2.getY() != oldY) {
-                // We send movement, host will notice player 2 moved
-            };*/
         }; break;
 
         // P2 controlled by client
@@ -382,7 +386,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // Draw Ball
     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-    SDL_FRect bRect = { ball.getX(), ball.getY(), BALL_SIZE, BALL_SIZE };
+    SDL_FRect bRect = { ball->getX(), ball->getY(), BALL_SIZE, BALL_SIZE };
     SDL_RenderFillRect(renderer, &bRect);
 
     // Draw Paddles
@@ -397,8 +401,8 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     // Draw Scores
     SDL_SetRenderScale(renderer, 2.0, 2.0);
     SDL_SetRenderDrawColor(renderer, 0, 255, 255, 255);
-    SDL_RenderDebugText(renderer, (GAME_WIDTH / 4) - 35, GAME_PADDING / 2, to_string(score1).c_str());
-    SDL_RenderDebugText(renderer, (GAME_WIDTH / 4) + 30, GAME_PADDING /2, to_string(score2).c_str());
+    SDL_RenderDebugText(renderer, (GAME_WIDTH / 4) - 35, GAME_PADDING / 2, to_string(scores.getScore(1)).c_str());
+    SDL_RenderDebugText(renderer, (GAME_WIDTH / 4) + 30, GAME_PADDING /2, to_string(scores.getScore(2)).c_str());
     SDL_SetRenderScale(renderer, 1.0, 1.0);
 
     // Debug Statistics Overlay
@@ -406,7 +410,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
         SDL_SetRenderDrawColor(renderer, 0, 128, 0, 255);
 
         // Left side stats
-        string statsStr = format("VX: {:.2f} VY: {:.2f} B: {}", ball.getVX() * SDL_NS_PER_SECOND, ball.getVY() * SDL_NS_PER_SECOND, ball.getBounceCount());
+        string statsStr = format("VX: {:.2f} VY: {:.2f} B: {}", ball->getVX() * SDL_NS_PER_SECOND, ball->getVY() * SDL_NS_PER_SECOND, ball->getBounceCount());
         SDL_RenderDebugText(renderer, GAME_PADDING, GAME_PADDING, statsStr.c_str());
 
         // Right side FPS

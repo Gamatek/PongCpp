@@ -1,5 +1,6 @@
 #pragma comment(lib, "ws2_32.lib")
 #include "NetworkManager.h"
+#include "ScoreManager.h"
 #include "Player.h"
 #include "Ball.h"
 #include "Constants.h"
@@ -33,7 +34,7 @@ bool NetworkManager::init() {
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         SDL_Log("Erreur lors de l'initialisation de Winsock.");
         return false;
-    }
+    };
     return true;
 }
 
@@ -41,11 +42,11 @@ void NetworkManager::cleanup() {
     if (_gameSocket != INVALID_SOCKET) {
         closesocket(_gameSocket);
         _gameSocket = INVALID_SOCKET;
-    }
+    };
     if (_discoverySocket != INVALID_SOCKET) {
         closesocket(_discoverySocket);
         _discoverySocket = INVALID_SOCKET;
-    }
+    };
     WSACleanup();
 }
 
@@ -62,13 +63,13 @@ bool NetworkManager::startHost(int port) {
     if (bind(_gameSocket, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
         cleanup();
         return false;
-    }
+    };
 
     _discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (_discoverySocket == INVALID_SOCKET) {
         cleanup();
         return false;
-    }
+    };
     setReuseAddr(_discoverySocket);
     setBroadcast(_discoverySocket);
     setNonBlocking(_discoverySocket);
@@ -81,7 +82,7 @@ bool NetworkManager::startHost(int port) {
     if (bind(_discoverySocket, (sockaddr*)&discAddr, sizeof(discAddr)) == SOCKET_ERROR) {
         cleanup();
         return false;
-    }
+    };
 
     _isHost = true;
     return true;
@@ -100,13 +101,13 @@ bool NetworkManager::startClient() {
     if (bind(_gameSocket, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
         cleanup();
         return false;
-    }
+    };
 
     _discoverySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (_discoverySocket == INVALID_SOCKET) {
         cleanup();
         return false;
-    }
+    };
     setReuseAddr(_discoverySocket);
     setBroadcast(_discoverySocket);
     setNonBlocking(_discoverySocket);
@@ -119,7 +120,7 @@ bool NetworkManager::startClient() {
     if (bind(_discoverySocket, (sockaddr*)&discAddr, sizeof(discAddr)) == SOCKET_ERROR) {
         cleanup();
         return false;
-    }
+    };
 
     _isHost = false;
     return true;
@@ -142,11 +143,10 @@ void NetworkManager::sendDiscoveryRequest() {
         SDL_Log("Erreur envoi de decouverte : %d", WSAGetLastError());
     } else {
         SDL_Log("Requete de decouverte envoyée !");
-    }
+    };
 }
 
-//void NetworkManager::updateHost(Player& p1, Player& p2, Ball& ball) {
-void NetworkManager::updateHost() {
+void NetworkManager::updateHost(std::vector<Entity*>& entities, ScoreManager& scores) {
     if (_gameSocket == INVALID_SOCKET) return;
 
     sockaddr_in discRemote{};
@@ -158,10 +158,9 @@ void NetworkManager::updateHost() {
             GamePacket response;
             response.type = PACKET_TYPE_DISCOVERY_RESPONSE;
             sendto(_discoverySocket, (const char*)&response, sizeof(GamePacket), 0, (sockaddr*)&discRemote, sizeof(discRemote));
-        }
-    }
+        };
+    };
 
-    
     sockaddr_in gameRemote{};
     int gameRemoteLen = sizeof(gameRemote);
     GamePacket gamePacket;
@@ -169,37 +168,45 @@ void NetworkManager::updateHost() {
     while (recvfrom(_gameSocket, (char*)&gamePacket, sizeof(GamePacket), 0, (sockaddr*)&gameRemote, &gameRemoteLen) > 0) {
         _remoteAddr = gameRemote;
         _hasRemote = true;
-        //handlePacket(gamePacket, p1, p2, ball);
-    }
+        handlePacket(gamePacket, entities, scores);
+    };
 
-    /*if (_hasRemote) {
-        GamePacket state;
-        state.type = PACKET_TYPE_PADDLE_UPDATE;
-        state.playerId = 1;
-        state.y = p1.getY();
-        sendPacket(state);
+    if (_hasRemote) {
+        for (Entity* e : entities) {
+            if (Player* player = dynamic_cast<Player*>(e)) {
+                GamePacket packet;
+                packet.type = PACKET_TYPE_PADDLE_UPDATE;
+                packet.playerId = player->getNumber();
+                packet.y = player->getY();
+                sendPacket(packet);
+            };
 
-        state.type = PACKET_TYPE_BALL_UPDATE;
-        state.x = ball.getX();
-        state.y = ball.getY();
-        state.vx = ball.getVX();
-        state.vy = ball.getVY();
-        sendPacket(state);
+            if (Ball* ball = dynamic_cast<Ball*>(e)) {
+                GamePacket packet;
+                packet.type = PACKET_TYPE_BALL_UPDATE;
+                packet.x = ball->getX();
+                packet.y = ball->getY();
+                packet.vx = ball->getVX();
+                packet.vy = ball->getVY();
+                sendPacket(packet);
+            };
+        };
 
-        state.type = PACKET_TYPE_SCORE_UPDATE;
-        //state.score1 = p1.getScore();
-        //state.score2 = p2.getScore();
-        sendPacket(state, true);
+        GamePacket scorePacket;
+        scorePacket.type = PACKET_TYPE_SCORE_UPDATE;
+        scorePacket.score1 = scores.getScore(1);
+        scorePacket.score2 = scores.getScore(2);
+        sendPacket(scorePacket, true);
 
         if (_gameStarted) {
-            state.type = PACKET_TYPE_GAME_START;
-            sendPacket(state, true);
-        }
-    }*/
+            GamePacket startPacket;
+            startPacket.type = PACKET_TYPE_GAME_START;
+            sendPacket(startPacket, true);
+        };
+    };
 }
 
-//void NetworkManager::updateClient(Player& p1, Player& p2, Ball& ball) {
-void NetworkManager::updateClient() {
+void NetworkManager::updateClient(std::vector<Entity*>& entities, ScoreManager& scores) {
     if (_gameSocket == INVALID_SOCKET) return;
 
     sockaddr_in discRemote{};
@@ -236,52 +243,59 @@ void NetworkManager::updateClient() {
     GamePacket gamePacket;
 
     while (recvfrom(_gameSocket, (char*)&gamePacket, sizeof(GamePacket), 0, (sockaddr*)&gameRemote, &gameRemoteLen) > 0) {
-        //handlePacket(gamePacket, p1, p2, ball);
-    }
+        handlePacket(gamePacket, entities, scores);
+    };
 
-    /*if (_hasRemote) {
-        GamePacket update;
-        update.type = PACKET_TYPE_PADDLE_UPDATE;
-        update.playerId = 2;
-        update.y = p2.getY();
-        sendPacket(update);
-    }*/
+    if (_hasRemote) {
+        for (Entity* e : entities) {
+            if (Player* player = dynamic_cast<Player*>(e)) {
+                if (player->getNumber() ==! 2) continue;
+                GamePacket updatePacket;
+                updatePacket.type = PACKET_TYPE_PADDLE_UPDATE;
+                updatePacket.playerId = player->getNumber();
+                updatePacket.y = player->getY();
+                sendPacket(updatePacket);
+            };
+        };
+    };
 }
 
-void NetworkManager::handlePacket(const GamePacket& packet, Player& p1, Player& p2, Ball& ball) {
+void NetworkManager::handlePacket(const GamePacket& packet, std::vector<Entity*>& entities, ScoreManager& scores) {
     switch (packet.type) {
-    case PACKET_TYPE_GAME_START:
-        if (!_isHost) {
-            _gameStarted = true;
-        }
-        break;
-    case PACKET_TYPE_PADDLE_UPDATE:
-        if (_isHost && packet.playerId == 2) {
-            p2.setY(packet.y);
-        }
-        else if (!_isHost && packet.playerId == 1) {
-            p1.setY(packet.y);
-        }
-        break;
-    case PACKET_TYPE_BALL_UPDATE:
-        if (!_isHost) {
-            ball.setX(packet.x);
-            ball.setY(packet.y);
-            ball.setVX(packet.vx);
-            ball.setVY(packet.vy);
-        }
-        break;
-    case PACKET_TYPE_SCORE_UPDATE:
-        if (!_isHost) {
-            //p1.resetScore();
-            //p2.resetScore();
-            //p1.addScore(packet.score1);
-            //p2.addScore(packet.score2);
-        }
-        break;
-    default:
-        break;
-    }
+        case PACKET_TYPE_GAME_START: {
+            if (!_isHost) {
+                _gameStarted = true;
+            };
+        }; break;
+
+        case PACKET_TYPE_SCORE_UPDATE: {
+            if (!_isHost) {
+                scores.setScore(1, packet.score1);
+                scores.setScore(2, packet.score2);
+            };
+        }; break;
+    };
+
+    for (Entity* e : entities) {
+        if (Player* player = dynamic_cast<Player*>(e)) {
+            if (packet.type == PACKET_TYPE_PADDLE_UPDATE) {
+                if (_isHost && player->getNumber() == packet.playerId && player->getNumber() != 1) {
+                    player->setY(packet.y);
+                } else if (!_isHost && player->getNumber() == packet.playerId && player->getNumber() != 2) {
+                    player->setY(packet.y);
+                };
+            };
+        };
+
+        if (Ball* ball = dynamic_cast<Ball*>(e)) {
+            if (packet.type == PACKET_TYPE_BALL_UPDATE) {
+                ball->setX(packet.x);
+                ball->setY(packet.y);
+                ball->setVX(packet.vx);
+                ball->setVY(packet.vy);
+            };
+        };
+    };
 }
 
 bool NetworkManager::connectTo(const NetAddress& address) {
@@ -295,6 +309,5 @@ bool NetworkManager::connectTo(const NetAddress& address) {
 
 void NetworkManager::sendPacket(const GamePacket& packet, bool reliable) {
     if (_gameSocket == INVALID_SOCKET || !_hasRemote) return;
-
     sendto(_gameSocket, (const char*)&packet, sizeof(GamePacket), 0, (sockaddr*)&_remoteAddr, sizeof(_remoteAddr));
 }

@@ -4,6 +4,7 @@
 #include <string>
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include "ScoreManager.h"
 #include "Player.h"
 #include "Ball.h"
 #include "Constants.h"
@@ -31,10 +32,8 @@ class NetworkManager {
         bool startClient();
 
         void sendDiscoveryRequest();
-        //void updateHost(Player& p1, Player& p2, Ball& ball);
-        void updateHost();
-        //void updateClient(Player& p1, Player& p2, Ball& ball);
-        void updateClient();
+        void updateHost(std::vector<Entity*>& entities, ScoreManager& scores);
+        void updateClient(std::vector<Entity*>& entities, ScoreManager& scores);
 
         bool connectTo(const NetAddress& address);
         void sendPacket(const GamePacket& packet, bool reliable = false);
@@ -46,7 +45,7 @@ class NetworkManager {
         const std::vector<RoomInfo>& getDiscoveredRooms() const { return _discoveredRooms; }
 
     private:
-        void handlePacket(const GamePacket& packet, Player& p1, Player& p2, Ball& ball);
+        void handlePacket(const GamePacket& packet, std::vector<Entity*>& entities, ScoreManager& scores);
 
         SOCKET _gameSocket = INVALID_SOCKET;
         SOCKET _discoverySocket = INVALID_SOCKET;
