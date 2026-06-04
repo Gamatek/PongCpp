@@ -2,6 +2,8 @@
 #include "Player.h"
 #include "Constants.h"
 #include <cstdlib>
+#include <thread>
+#include <Windows.h>
 
 Ball::Ball() : Entity(BALL_SIZE, BALL_SIZE) { };
 Ball::~Ball() { };
@@ -19,9 +21,11 @@ void Ball::move(int elapsed_ns) {
     if (getY() <= 0) {
         setY(0);
         reverseVY();
+        std::thread([]() { Beep(400, 120); }).detach();
     } else if (getY() >= GAME_HEIGHT - BALL_SIZE) {
         setY(GAME_HEIGHT - BALL_SIZE);
         reverseVY();
+        std::thread([]() { Beep(400, 120); }).detach();
     };
 };
 
