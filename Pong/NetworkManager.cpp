@@ -3,6 +3,7 @@
 #include "ScoreManager.h"
 #include "Player.h"
 #include "Ball.h"
+#include "Utils.h"
 #include "Constants.h"
 #include <iostream>
 #include <cstring>
@@ -146,8 +147,99 @@ void NetworkManager::sendDiscoveryRequest() {
     };
 }
 
+bool NetworkManager::connectTo(const NetAddress& address) {
+    _remoteAddr.sin_family = AF_INET;
+    _remoteAddr.sin_port = htons(address.port);
+    inet_pton(AF_INET, address.ip.c_str(), &_remoteAddr.sin_addr);
+    _hasRemote = true;
+    _gameStarted = true;
+    return true;
+}
+
+void NetworkManager::sendPacket(const GamePacket& packet, bool reliable) {
+    if (_gameSocket == INVALID_SOCKET || !_hasRemote) return;
+
+    GamePacket packetToSend = packet;
+    packetToSend.sequence = _nextSequenceToSend++;
+    packetToSend.timestamp = SDL_GetTicks();
+    packetToSend.echoSequence = _lastReceivedSequence;
+    packetToSend.echoTimestamp = _lastReceivedTimestamp;
+
+    int bytesSent = sendto(_gameSocket, (const char*)&packetToSend, sizeof(GamePacket), 0, (sockaddr*)&_remoteAddr, sizeof(_remoteAddr));
+
+    if (bytesSent > 0) {
+        _bytesSentAccumulator += bytesSent;
+        _packetsSentThisSecond++;
+    };
+}
+
+void NetworkManager::handlePacket(const GamePacket& packet, std::vector<Entity*>& entities, ScoreManager& scores) {
+    unsigned int now = SDL_GetTicks();
+    if (packet.echoTimestamp > 0) {
+        double currentPing = static_cast<double>(now - packet.echoTimestamp);
+        _stats.ping = _stats.ping == 0.0 ? currentPing : (_stats.ping * 0.9) + (currentPing * 0.1);
+        _lastCalculatedPingSequence = packet.echoSequence;
+    };
+
+    // Ping Echo
+    _lastReceivedSequence = packet.sequence;
+    _lastReceivedTimestamp = packet.timestamp;
+
+    // Packet
+    _packetsReceivedThisSecond++;
+
+    // Packet loss
+    _packetsReceivedCount++;
+    if (_highestSequenceReceived == 0 || packet.sequence > _highestSequenceReceived) {
+        if (_highestSequenceReceived > 0) {
+            unsigned int lostThisStep = packet.sequence - _highestSequenceReceived - 1;
+            _packetsExpected += lostThisStep;
+        };
+        _highestSequenceReceived = packet.sequence;
+    };
+    _packetsExpected++;
+
+    switch (packet.type) {
+        case PACKET_TYPE_GAME_START: {
+            if (!_isHost) {
+                _gameStarted = true;
+            };
+        }; break;
+
+        case PACKET_TYPE_SCORE_UPDATE: {
+            if (!_isHost) {
+                scores.setScore(1, packet.score1);
+                scores.setScore(2, packet.score2);
+            };
+        }; break;
+    };
+
+    for (Entity* e : entities) {
+        if (Player* player = dynamic_cast<Player*>(e)) {
+            if (packet.type == PACKET_TYPE_PADDLE_UPDATE) {
+                if (_isHost && player->getNumber() == packet.playerId && player->getNumber() != 1) {
+                    player->setY(packet.y);
+                } else if (!_isHost && player->getNumber() == packet.playerId && player->getNumber() != 2) {
+                    player->setY(packet.y);
+                };
+            };
+        };
+
+        if (Ball* ball = dynamic_cast<Ball*>(e)) {
+            if (packet.type == PACKET_TYPE_BALL_UPDATE) {
+                ball->setX(packet.x);
+                ball->setY(packet.y);
+                ball->setVX(packet.vx);
+                ball->setVY(packet.vy);
+            };
+        };
+    };
+}
+
 void NetworkManager::updateHost(std::vector<Entity*>& entities, ScoreManager& scores) {
     if (_gameSocket == INVALID_SOCKET) return;
+
+    updateStats(SDL_GetTicks());
 
     sockaddr_in discRemote{};
     int discRemoteLen = sizeof(discRemote);
@@ -165,7 +257,9 @@ void NetworkManager::updateHost(std::vector<Entity*>& entities, ScoreManager& sc
     int gameRemoteLen = sizeof(gameRemote);
     GamePacket gamePacket;
 
-    while (recvfrom(_gameSocket, (char*)&gamePacket, sizeof(GamePacket), 0, (sockaddr*)&gameRemote, &gameRemoteLen) > 0) {
+    int bytesRead = 0;
+    while ((bytesRead = recvfrom(_gameSocket, (char*)&gamePacket, sizeof(GamePacket), 0, (sockaddr*)&gameRemote, &gameRemoteLen)) > 0) {
+        _bytesReceivedAccumulator += bytesRead;
         _remoteAddr = gameRemote;
         _hasRemote = true;
         handlePacket(gamePacket, entities, scores);
@@ -209,6 +303,8 @@ void NetworkManager::updateHost(std::vector<Entity*>& entities, ScoreManager& sc
 void NetworkManager::updateClient(std::vector<Entity*>& entities, ScoreManager& scores) {
     if (_gameSocket == INVALID_SOCKET) return;
 
+    updateStats(SDL_GetTicks());
+
     sockaddr_in discRemote{};
     int discRemoteLen = sizeof(discRemote);
     GamePacket discPacket;
@@ -242,14 +338,16 @@ void NetworkManager::updateClient(std::vector<Entity*>& entities, ScoreManager& 
     int gameRemoteLen = sizeof(gameRemote);
     GamePacket gamePacket;
 
-    while (recvfrom(_gameSocket, (char*)&gamePacket, sizeof(GamePacket), 0, (sockaddr*)&gameRemote, &gameRemoteLen) > 0) {
+    int bytesRead = 0;
+    while ((bytesRead = recvfrom(_gameSocket, (char*)&gamePacket, sizeof(GamePacket), 0, (sockaddr*)&gameRemote, &gameRemoteLen)) > 0) {
+        _bytesReceivedAccumulator += bytesRead;
         handlePacket(gamePacket, entities, scores);
     };
 
     if (_hasRemote) {
         for (Entity* e : entities) {
             if (Player* player = dynamic_cast<Player*>(e)) {
-                if (player->getNumber() ==! 2) continue;
+                if (player->getNumber() != 2) continue;
                 GamePacket updatePacket;
                 updatePacket.type = PACKET_TYPE_PADDLE_UPDATE;
                 updatePacket.playerId = player->getNumber();
@@ -260,54 +358,38 @@ void NetworkManager::updateClient(std::vector<Entity*>& entities, ScoreManager& 
     };
 }
 
-void NetworkManager::handlePacket(const GamePacket& packet, std::vector<Entity*>& entities, ScoreManager& scores) {
-    switch (packet.type) {
-        case PACKET_TYPE_GAME_START: {
-            if (!_isHost) {
-                _gameStarted = true;
-            };
-        }; break;
-
-        case PACKET_TYPE_SCORE_UPDATE: {
-            if (!_isHost) {
-                scores.setScore(1, packet.score1);
-                scores.setScore(2, packet.score2);
-            };
-        }; break;
+void NetworkManager::updateStats(unsigned int currentTime) {
+    if (_lastStatsUpdateTime == 0) {
+        _lastStatsUpdateTime = currentTime;
+        return;
     };
 
-    for (Entity* e : entities) {
-        if (Player* player = dynamic_cast<Player*>(e)) {
-            if (packet.type == PACKET_TYPE_PADDLE_UPDATE) {
-                if (_isHost && player->getNumber() == packet.playerId && player->getNumber() != 1) {
-                    player->setY(packet.y);
-                } else if (!_isHost && player->getNumber() == packet.playerId && player->getNumber() != 2) {
-                    player->setY(packet.y);
-                };
-            };
+    unsigned int elapsedTime = currentTime - _lastStatsUpdateTime;
+    if (elapsedTime >= 1000) {
+        double seconds = elapsedTime / 1000.0;
+
+        // Bandwidth
+        _stats.uploadRate = (_bytesSentAccumulator / 1024.0) / seconds;
+        _stats.downloadRate = (_bytesReceivedAccumulator / 1024.0) / seconds;
+        _bytesSentAccumulator = 0;
+        _bytesReceivedAccumulator = 0;
+
+        // Packet
+        _stats.upPacketsPerSec = static_cast<int>(_packetsSentThisSecond / seconds);
+        _stats.downPacketsPerSec = static_cast<int>(_packetsReceivedThisSecond / seconds);
+        _packetsSentThisSecond = 0;
+        _packetsReceivedThisSecond = 0;
+
+        // Packet loss
+        if (_packetsExpected > 0) {
+            unsigned int lost = (_packetsExpected > _packetsReceivedCount) ? (_packetsExpected - _packetsReceivedCount) : 0;
+            _stats.packetLoss = ((double)lost / _packetsExpected) * 100.0;
+        } else {
+            _stats.packetLoss = 0.0;
         };
 
-        if (Ball* ball = dynamic_cast<Ball*>(e)) {
-            if (packet.type == PACKET_TYPE_BALL_UPDATE) {
-                ball->setX(packet.x);
-                ball->setY(packet.y);
-                ball->setVX(packet.vx);
-                ball->setVY(packet.vy);
-            };
-        };
+        _packetsExpected = 0;
+        _packetsReceivedCount = 0;
+        _lastStatsUpdateTime = currentTime;
     };
-}
-
-bool NetworkManager::connectTo(const NetAddress& address) {
-    _remoteAddr.sin_family = AF_INET;
-    _remoteAddr.sin_port = htons(address.port);
-    inet_pton(AF_INET, address.ip.c_str(), &_remoteAddr.sin_addr);
-    _hasRemote = true;
-    _gameStarted = true;
-    return true;
-}
-
-void NetworkManager::sendPacket(const GamePacket& packet, bool reliable) {
-    if (_gameSocket == INVALID_SOCKET || !_hasRemote) return;
-    sendto(_gameSocket, (const char*)&packet, sizeof(GamePacket), 0, (sockaddr*)&_remoteAddr, sizeof(_remoteAddr));
 }
