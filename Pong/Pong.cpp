@@ -49,6 +49,48 @@ void reset_players_positions() {
     };
 };
 
+void RenderDebugOverlay() {
+    constexpr int ROW_HEIGHT = DEBUG_CHAR_HEIGHT + 4;
+
+    // Left side (physic/network)
+    if (network.isGameStarted() || network.isHost()) {
+        const NetworkStats& net = network.getStats();
+
+        SDL_SetRenderDrawColor(renderer, 255, net.ping > 100 ? 60 : 255, net.ping > 100 ? 60 : 255, 255);
+        string pingStr = format("Ping: {:.0f}", net.ping);
+        SDL_RenderDebugText(renderer, GAME_PADDING, GAME_PADDING + (0 * ROW_HEIGHT), pingStr.c_str());
+
+        SDL_SetRenderDrawColor(renderer, 255, net.packetLoss > 1 ? 60 : 255, net.packetLoss > 1 ? 60 : 255, 255);
+        int firstColumnX = GAME_PADDING;
+        string upSpeedStr   = format("UP: {:.2f}KB/s", net.uploadRate);
+        string upPacketsStr = format("    {} Packets/s", net.upPacketsPerSec);
+        SDL_RenderDebugText(renderer, firstColumnX, GAME_PADDING + ROW_HEIGHT, upSpeedStr.c_str());
+        SDL_RenderDebugText(renderer, firstColumnX, GAME_PADDING + (ROW_HEIGHT * 2), upPacketsStr.c_str());
+
+        int secondColumnX = GAME_PADDING + 150;
+        SDL_SetRenderDrawColor(renderer, 255, net.packetLoss > 1 ? 60 : 255, net.packetLoss > 1 ? 60 : 255, 255);
+        string downSpeedStr   = format("DOWN: {:.2f}KB/s", net.downloadRate);
+        string downPacketsStr = format("      {} Packets/s", net.downPacketsPerSec);
+        string downLossStr    = format("      {:.0f}% Packet Loss", net.packetLoss);
+        SDL_RenderDebugText(renderer, secondColumnX, GAME_PADDING + ROW_HEIGHT, downSpeedStr.c_str());
+        SDL_RenderDebugText(renderer, secondColumnX, GAME_PADDING + (ROW_HEIGHT * 2), downPacketsStr.c_str());
+        SDL_RenderDebugText(renderer, secondColumnX, GAME_PADDING + (ROW_HEIGHT * 3), downLossStr.c_str());
+    };
+
+    SDL_SetRenderDrawColor(renderer, 60, 220, 60, 255);
+
+    // Right side (perf)
+    int rightTextX = GAME_WIDTH - 80 - GAME_PADDING;
+
+    // FPS
+    string fpsStr = format("{:.1f} FPS", current_fps);
+    SDL_RenderDebugText(renderer, rightTextX, GAME_PADDING, fpsStr.c_str());
+
+    // Frame duration
+    string frameStr = format("{:.2f} ms", last_frame_duration / 1000000.0);
+    SDL_RenderDebugText(renderer, rightTextX, GAME_PADDING + ROW_HEIGHT, frameStr.c_str());
+};
+
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
     srand(time(0));
@@ -272,41 +314,39 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
             for (Entity* e : entities) {
                 if (Player* player = dynamic_cast<Player*>(e)) {
                     if (!ball->checkCollision(*player)) continue;
-                    if (ball->getVX() < 0) {
-                        ball->reverseVX();
-                        ball->incrementBounceCount();
-                        if (ball->getBounceCount() % 3 == 0) {
-                            ball->setVX(ball->getVX() * 1.1);
-                            ball->setVY(ball->getVY() * 1.1);
-                        };
-                        std::thread([]() { Beep(800, 80); }).detach();
-                    };
-                    break;
+                    ball->reverseVX();
+                    ball->incrementBounceCount();
+                    if (ball->getBounceCount() % 3 == 0) {
+                        ball->setVX(ball->getVX() * 1.1);
+                        ball->setVY(ball->getVY() * 1.1);
+                     };
+                     thread([]() { Beep(800, 80); }).detach();
+                 };
+                 break;
+            };
+        };
+
+        // Scoring detection
+        bool team1_win = ball->getX() > GAME_WIDTH;
+        bool team2_win = ball->getX() < 0;
+
+        if (team1_win || team2_win) {
+            scores.incrimentScore(team1_win ? 1 : 2);
+            reset_players_positions();
+            ball->reset();
+            if (game_mode == MODE_NET_HOST) network.setGameStarted(false);
+            thread([team1_win, team2_win]() {
+                if (team1_win) {
+                    Beep(523, 100); // Do
+                    Beep(659, 100); // Mi
+                    Beep(784, 200); // Sol
                 };
-            };
-
-            // Scoring detection
-            bool team1_win = ball->getX() > GAME_WIDTH;
-            bool team2_win = ball->getX() < 0;
-
-            if (team1_win || team2_win) {
-                scores.incrimentScore(team1_win ? 1 : 2);
-                reset_players_positions();
-                ball->reset();
-                if (game_mode == MODE_NET_HOST) network.setGameStarted(false);
-                std::thread([team1_win, team2_win]() {
-                    if (team1_win) {
-                        Beep(523, 100); // Do
-                        Beep(659, 100); // Mi
-                        Beep(784, 200); // Sol
-                    };
-                    if (team2_win) {
-                        Beep(440, 100); // La
-                        Beep(587, 100); // Ré
-                        Beep(740, 200); // Fa#
-                    };
-                }).detach();
-            };
+                if (team2_win) {
+                    Beep(440, 100); // La
+                    Beep(587, 100); // Ré
+                    Beep(740, 200); // Fa#
+                };
+             }).detach();
         };
     };
 
@@ -370,7 +410,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
                     lastP2Y = player->getY();
                 };
             };
-        } break;
+        }; break;
     };
 
     // Render Frame
@@ -407,19 +447,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
     // Debug Statistics Overlay
     if (show_stats) {
-        SDL_SetRenderDrawColor(renderer, 0, 128, 0, 255);
-
-        // Left side stats
-        string statsStr = format("VX: {:.2f} VY: {:.2f} B: {}", ball->getVX() * SDL_NS_PER_SECOND, ball->getVY() * SDL_NS_PER_SECOND, ball->getBounceCount());
-        SDL_RenderDebugText(renderer, GAME_PADDING, GAME_PADDING, statsStr.c_str());
-
-        // Right side FPS
-        string fpsStr = format("{:.2f} FPS", current_fps);
-        SDL_RenderDebugText(renderer, GAME_WIDTH - 100, GAME_PADDING, fpsStr.c_str());
-
-        // Frame duration
-        string frameStr = format("{:.2f} ms", last_frame_duration / 1000000.0);
-        SDL_RenderDebugText(renderer, GAME_WIDTH - 100, GAME_PADDING + DEBUG_CHAR_HEIGHT, frameStr.c_str());
+        RenderDebugOverlay();
     };
 
     SDL_RenderPresent(renderer);
