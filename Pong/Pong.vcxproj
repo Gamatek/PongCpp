@@ -136,6 +136,7 @@
     <ClCompile Include="NetworkManager.cpp" />
     <ClCompile Include="Player.cpp" />
     <ClCompile Include="Pong.cpp" />
+    <ClCompile Include="ScoreManager.cpp" />
     <ClCompile Include="Utils.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -144,6 +145,7 @@
     <ClInclude Include="Entity.h" />
     <ClInclude Include="NetworkManager.h" />
     <ClInclude Include="Player.h" />
+    <ClInclude Include="ScoreManager.h" />
     <ClInclude Include="Utils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
