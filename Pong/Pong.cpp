@@ -40,7 +40,7 @@ ScoreManager scores;
 int game_mode = MODE_MENU;
 bool show_stats = false;
 
-void reset_players_positions() {
+void resetPlayersPositions() {
     double y = (GAME_HEIGHT / 2.0f) - (PADDLE_HEIGHT / 2.0f);
     for (Entity* e : entities) {
         if (Player* player = dynamic_cast<Player*>(e)) {
@@ -162,7 +162,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* evt) {
                 if (evt->key.key == SDLK_5) game_mode = MODE_SETTINGS;
                 if (old_game_mode != game_mode) {
                     scores.resetAll();
-                    reset_players_positions();
+                    resetPlayersPositions();
                     ball->reset();
                 };
             }; break;
@@ -332,7 +332,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
 
         if (team1_win || team2_win) {
             scores.incrimentScore(team1_win ? 1 : 2);
-            reset_players_positions();
+            resetPlayersPositions();
             ball->reset();
             if (game_mode == MODE_NET_HOST) network.setGameStarted(false);
             thread([team1_win, team2_win]() {

@@ -52,7 +52,7 @@ void Entity::move(int elapsed_ns) {
 };
 
 // AABB collision detection
-bool Entity::check_collision(const Entity& entity) {
+bool Entity::checkCollision(const Entity& entity) {
     return (
         entity.getX() < getX() + getW() &&
         entity.getX() + entity.getW() > getX() &&

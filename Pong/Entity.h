@@ -35,6 +35,6 @@ class Entity {
         void reverseVY(bool force);
 
         virtual void move(int elapsed_ns);
-        bool check_collision(const Entity& entity);
+        bool checkCollision(const Entity& entity);
         //virtual void draw(SDL_Renderer* renderer) = 0;
 };
